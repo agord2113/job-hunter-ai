@@ -8,7 +8,7 @@
 
 **Розумний Telegram-бот з AI-аналізом вакансій для українських сайтів Work.ua та Robota.ua**
 
-[Спробувати бота](https://t.me/your_bot_username) · [Повідомити про помилку](https://github.com/agord2113/job-hunter-ai/issues)
+[🤖 Спробувати бота](https://t.me/user545445454_bot) · [🌐 Сайт проекту](https://jobbot-ai-ua.netlify.app/) · [🐛 Повідомити про помилку](https://github.com/agord2113/job-hunter-ai/issues)
 
 </div>
 
@@ -164,6 +164,8 @@ job-hunter-ai/
 
 - **Telegram:** [@Andrey_Gordienkos](https://t.me/Andrey_Gordienkos)
 - **GitHub:** [agord2113](https://github.com/agord2113)
+- **Сайт проекту:** [jobbot-ai-ua.netlify.app](https://jobbot-ai-ua.netlify.app/)
+- **Бот:** [@user545445454_bot](https://t.me/user545445454_bot)
 
 ---
 
