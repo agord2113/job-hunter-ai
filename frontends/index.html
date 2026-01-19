@@ -1,0 +1,42 @@
+<script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        // Відновлюємо збережені дані при запуску
+        window.onload = function() {
+            const savedUrl = localStorage.getItem('lastUrl');
+            const savedBrowser = localStorage.getItem('lastBrowser');
+            if (savedUrl) document.getElementById('urlInput').value = savedUrl;
+            if (savedBrowser) document.getElementById('browserSelect').value = savedBrowser;
+        }
+
+        function sendData() {
+            const url = document.getElementById('urlInput').value;
+            const browser = document.getElementById('browserSelect').value;
+
+            if (!url.includes('http')) {
+                tg.showAlert("❌ Помилка: Вставте посилання!");
+                return;
+            }
+
+            // Зберігаємо вибір на майбутнє
+            localStorage.setItem('lastUrl', url);
+            localStorage.setItem('lastBrowser', browser);
+
+            const data = {
+                url: url,
+                browser: browser,
+                requireWebsite: document.getElementById('siteCheck').checked,
+                skipFop: document.getElementById('fopCheck').checked,
+                allowRemote: document.getElementById('remoteCheck').checked
+            };
+
+            // 1. ВІДПРАВЛЯЄМО ДАНІ
+            tg.sendData(JSON.stringify(data));
+            
+            // 2. ПРИМУСОВО ЗАКРИВАЄМО ВІКНО (Ось чого не вистачало!)
+            setTimeout(() => {
+                tg.close();
+            }, 100);
+        }
+    </script>
