@@ -1,42 +1,428 @@
-<script>
+<!DOCTYPE html>
+<html lang="uk">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobBot AI</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: #8892b0;
+            font-size: 14px;
+        }
+
+        .input-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .input-label {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #ccd6f6;
+        }
+
+        .input-hint {
+            font-size: 12px;
+            color: #8892b0;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+
+        .input-hint code {
+            background: rgba(100, 255, 218, 0.1);
+            color: #64ffda;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #64ffda;
+            background: rgba(100, 255, 218, 0.05);
+        }
+
+        .search-input::placeholder {
+            color: #5a6a8a;
+        }
+
+        /* Секція досвіду - прихована за замовчуванням */
+        .experience-section {
+            background: rgba(100, 255, 218, 0.05);
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 15px;
+            border: 1px solid rgba(100, 255, 218, 0.2);
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .experience-section.visible {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .experience-label {
+            font-size: 13px;
+            color: #64ffda;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .experience-options {
+            display: flex;
+            gap: 10px;
+        }
+
+        .exp-btn {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #a8b2d1;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .exp-btn:hover {
+            border-color: rgba(100, 255, 218, 0.3);
+        }
+
+        .exp-btn.active {
+            border-color: #64ffda;
+            background: rgba(100, 255, 218, 0.15);
+            color: #64ffda;
+        }
+
+        .filters-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .filters-title {
+            font-size: 14px;
+            color: #ccd6f6;
+            margin-bottom: 15px;
+        }
+
+        .filter-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .filter-item:last-child {
+            border-bottom: none;
+        }
+
+        .filter-label {
+            font-size: 14px;
+            color: #a8b2d1;
+        }
+
+        .toggle {
+            position: relative;
+            width: 50px;
+            height: 28px;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 28px;
+            transition: 0.3s;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            bottom: 3px;
+            background: #fff;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+
+        .toggle input:checked+.toggle-slider {
+            background: #64ffda;
+        }
+
+        .toggle input:checked+.toggle-slider:before {
+            transform: translateX(22px);
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #64ffda 0%, #48c9b0 100%);
+            color: #1a1a2e;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(100, 255, 218, 0.3);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 JobBot AI</h1>
+            <p>Розумний пошук вакансій</p>
+        </div>
+
+        <div class="input-section">
+            <label class="input-label">🔍 Що шукаємо?</label>
+            <div class="input-hint">
+                Введіть <code>@Python Київ</code> для пошуку<br>
+                або вставте посилання з robota.ua / work.ua
+            </div>
+            <input type="text" id="searchInput" class="search-input" placeholder="@Junior Developer або https://..."
+                oninput="checkInputMode()">
+
+            <!-- Секція досвіду - показується тільки при @ пошуку -->
+            <div class="experience-section" id="experienceSection">
+                <label class="experience-label">💼 Досвід роботи:</label>
+                <div class="experience-options">
+                    <button type="button" class="exp-btn active" data-exp="any" onclick="selectExperience(this)">
+                        🔄 Будь-який
+                    </button>
+                    <button type="button" class="exp-btn" data-exp="none" onclick="selectExperience(this)">
+                        🌱 Без досвіду
+                    </button>
+                    <button type="button" class="exp-btn" data-exp="has" onclick="selectExperience(this)">
+                        ⭐ З досвідом
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="filters-section">
+            <div class="filters-title">⚙️ Фільтри</div>
+
+            <div class="filter-item">
+                <span class="filter-label">Тільки з сайтом компанії?</span>
+                <label class="toggle">
+                    <input type="checkbox" id="siteCheck">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
+            <div class="filter-item">
+                <span class="filter-label">Прибрати ФОП/Галери?</span>
+                <label class="toggle">
+                    <input type="checkbox" id="fopCheck" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
+            <div class="filter-item">
+                <span class="filter-label">Дозволити віддалену?</span>
+                <label class="toggle">
+                    <input type="checkbox" id="remoteCheck">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <button class="submit-btn" onclick="sendData()">🚀 ЗАПУСТИТИ</button>
+    </div>
+
+    <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
+        tg.ready();
 
-        // Відновлюємо збережені дані при запуску
-        window.onload = function() {
-            const savedUrl = localStorage.getItem('lastUrl');
-            const savedBrowser = localStorage.getItem('lastBrowser');
-            if (savedUrl) document.getElementById('urlInput').value = savedUrl;
-            if (savedBrowser) document.getElementById('browserSelect').value = savedBrowser;
+        tg.setHeaderColor('#1a1a2e');
+        tg.setBackgroundColor('#1a1a2e');
+
+        let selectedExperience = 'any';
+
+        // Відновлюємо збережені дані
+        window.onload = function () {
+            const savedSearch = localStorage.getItem('lastSearch');
+            if (savedSearch) {
+                document.getElementById('searchInput').value = savedSearch;
+                checkInputMode();
+            }
+        }
+
+        // Перевіряємо режим вводу і показуємо/ховаємо секцію досвіду
+        function checkInputMode() {
+            const value = document.getElementById('searchInput').value.trim();
+            const expSection = document.getElementById('experienceSection');
+
+            // Показуємо досвід тільки якщо це пошук (@ або текст без http)
+            if (value.startsWith('@') || (value.length > 2 && !value.includes('http'))) {
+                expSection.classList.add('visible');
+            } else {
+                expSection.classList.remove('visible');
+            }
+        }
+
+        // Вибір досвіду
+        function selectExperience(btn) {
+            document.querySelectorAll('.exp-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedExperience = btn.dataset.exp;
         }
 
         function sendData() {
-            const url = document.getElementById('urlInput').value;
-            const browser = document.getElementById('browserSelect').value;
+            const searchValue = document.getElementById('searchInput').value.trim();
 
-            if (!url.includes('http')) {
-                tg.showAlert("❌ Помилка: Вставте посилання!");
+            if (!searchValue) {
+                tg.showAlert("❌ Введіть запит або посилання!");
                 return;
             }
 
-            // Зберігаємо вибір на майбутнє
-            localStorage.setItem('lastUrl', url);
-            localStorage.setItem('lastBrowser', browser);
+            let url = '';
+            let isSearch = false;
+
+            // Визначаємо тип вводу
+            if (searchValue.startsWith('@') || !searchValue.includes('http')) {
+                // Це пошуковий запит
+                const query = searchValue.startsWith('@') ? searchValue.substring(1).trim() : searchValue.trim();
+                const encodedQuery = encodeURIComponent(query).replace(/%20/g, '-');
+
+                // Формуємо URL з урахуванням досвіду
+                let expPath = '';
+                if (selectedExperience === 'none') {
+                    expPath = 'без-досвіду-';
+                } else if (selectedExperience === 'has') {
+                    expPath = 'з-досвідом-';
+                }
+
+                url = `https://robota.ua/zapros/${expPath}${encodedQuery}/ukraine`;
+                isSearch = true;
+            } else {
+                // Це пряме посилання
+                url = searchValue;
+            }
+
+            // Перевіряємо чи це підтримуваний сайт
+            if (!url.includes('robota.ua') && !url.includes('work.ua')) {
+                tg.showAlert("⚠️ Підтримуються тільки robota.ua та work.ua");
+                return;
+            }
+
+            // Зберігаємо для наступного разу
+            localStorage.setItem('lastSearch', searchValue);
 
             const data = {
                 url: url,
-                browser: browser,
+                isSearch: isSearch,
+                originalQuery: searchValue,
+                experience: selectedExperience,
                 requireWebsite: document.getElementById('siteCheck').checked,
                 skipFop: document.getElementById('fopCheck').checked,
                 allowRemote: document.getElementById('remoteCheck').checked
             };
 
-            // 1. ВІДПРАВЛЯЄМО ДАНІ
             tg.sendData(JSON.stringify(data));
-            
-            // 2. ПРИМУСОВО ЗАКРИВАЄМО ВІКНО (Ось чого не вистачало!)
+
             setTimeout(() => {
                 tg.close();
             }, 100);
         }
+
+        // Enter для відправки
+        document.getElementById('searchInput').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                sendData();
+            }
+        });
     </script>
+</body>
+
+</html>
+</CodeContent>
+<parameter name="Complexity">5

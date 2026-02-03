@@ -67,14 +67,34 @@ async function analyzeWithGroq(text, filters) {
             model: "llama-3.3-70b-versatile",
             messages: [{
                 role: "user",
-                content: `Ти HR-асистент. Проаналізуй текст вакансії.
-                Текст: """${text.substring(0, 4000)}"""
-                Фільтри: ${JSON.stringify(filters)}
-                Правила:
-                1. Якщо "salary_only": true, а цифр зарплати немає -> valid: false.
-                2. Якщо "remote_only": true, а робота в офісі -> valid: false.
-                Відповісти JSON: 
-                { "valid": boolean, "reason": "...", "summary": "Короткий опис українською (2-3 речення)" }`
+                content: `Ти HR-асистент. Проаналізуй текст вакансії та перевір фільтри.
+
+ТЕКСТ ВАКАНСІЇ:
+"""${text.substring(0, 4000)}"""
+
+ФІЛЬТРИ КОРИСТУВАЧА: ${JSON.stringify(filters)}
+
+ПРАВИЛА ФІЛЬТРАЦІЇ (перевіряй СТРОГО!):
+
+1. ФІЛЬТР "requireWebsite" (потрібен сайт компанії):
+   - Якщо requireWebsite = true, шукай в тексті ПОСИЛАННЯ НА САЙТ КОМПАНІЇ
+   - Сайт компанії це: example.com, company.ua, www.firma.com тощо
+   - НЕ рахується сайтом: robota.ua, work.ua, linkedin.com, facebook.com, instagram.com, telegram
+   - Якщо є тільки пошта (email) без сайту - це НЕ сайт компанії
+   - Якщо сайту компанії НЕМАЄ -> valid: false, reason: "Немає сайту компанії"
+
+2. ФІЛЬТР "skipFop" (пропускати ФОП):
+   - Якщо skipFop = true, перевір чи це вакансія від ФОП
+   - Ознаки ФОП: "ФОП", "фізична особа-підприємець", "оформлення на ФОП", "ФО-П"
+   - Якщо це ФОП -> valid: false, reason: "Вакансія від ФОП"
+
+3. ФІЛЬТР "allowRemote" (дозволити віддалену роботу):
+   - Якщо allowRemote = false, вакансія НЕ повинна бути ТІЛЬКИ remote
+   - Якщо робота ТІЛЬКИ віддалена без офісу -> valid: false, reason: "Тільки remote"
+   - Якщо є офіс АБО гібрид -> valid: true
+
+ВІДПОВІДАЙ СТРОГО JSON:
+{ "valid": boolean, "reason": "причина якщо valid=false, інакше 'OK'", "summary": "Короткий опис вакансії українською (2-3 речення про компанію, позицію, умови)" }`
             }],
             response_format: { type: "json_object" }
         });
@@ -125,10 +145,15 @@ function formatSummary(summaryData) {
 async function showCurrentVacancy(ctx) {
     const session = ctx.session;
     if (!session.candidates || session.currentIndex >= session.candidates.length) {
-        await ctx.editMessageText(
-            `🏁 <b>Перегляд завершено!</b>\nВсі лайкнуті вакансії збережено в меню "📂 Збережені".`,
-            { parse_mode: 'HTML' }
-        );
+        try {
+            await ctx.editMessageText(
+                `🏁 <b>Перегляд завершено!</b>\nВсі лайкнуті вакансії збережено в меню "📂 Збережені".`,
+                { parse_mode: 'HTML' }
+            );
+        } catch (e) {
+            // Ігноруємо помилку якщо повідомлення вже таке саме
+            if (!e.message?.includes('message is not modified')) throw e;
+        }
         return;
     }
     const vacancy = session.candidates[session.currentIndex];
@@ -191,7 +216,11 @@ async function startBatchScraping(ctx, statusMsgId) {
     ctx.session.isFirstMessage = true;
 
     try {
-        browser = await chromium.launch({ headless: false });
+        browser = await chromium.launch({
+            headless: true,
+            executablePath: process.platform === 'linux' ? '/usr/bin/google-chrome' : undefined,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        });
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             viewport: { width: 1280, height: 800 }
@@ -213,8 +242,16 @@ async function startBatchScraping(ctx, statusMsgId) {
         let links = await page.evaluate(() => {
             return Array.from(document.querySelectorAll('a'))
                 .map(a => a.href)
-                .filter(href => href.includes('vacancy') || href.includes('/job/') || href.includes('/company') && href.match(/\d{5,}/))
-                .slice(0, 10);
+                .filter(href => {
+                    // Шукаємо посилання на вакансії
+                    const hasVacancy = href.includes('vacancy') || href.includes('/jobs/') || href.includes('/job/');
+
+                    // Виключаємо чисті профілі компаній (без вакансії в URL)
+                    const isCompanyOnly = (href.includes('/company') || href.includes('/companies/')) && !href.includes('vacancy');
+
+                    return hasVacancy && !isCompanyOnly;
+                })
+                .slice(0, 15); // Збільшив ліміт
         });
 
         if (links.length === 0) {
@@ -237,16 +274,38 @@ async function startBatchScraping(ctx, statusMsgId) {
             const tab = await context.newPage();
             try {
                 await tab.goto(link, { waitUntil: 'domcontentloaded', timeout: 20000 });
-                await new Promise(r => setTimeout(r, 1000));
+                await new Promise(r => setTimeout(r, 1500)); // Трохи більше часу для SPA
 
                 // 👇 ВИПРАВЛЕННЯ ЗАГОЛОВКІВ
                 const title = await tab.evaluate(() => {
                     const h1 = document.querySelector('h1');
                     return h1 ? h1.innerText.trim() : document.title;
                 });
+
+                // Отримуємо весь текст сторінки
                 const text = await tab.evaluate(() => document.body.innerText);
 
-                const analysis = await analyzeWithGroq(text, ctx.session.filters);
+                // 👇 ПЕРЕВІРКА САЙТУ КОМПАНІЇ (НАДІЙНА - через текст сторінки)
+                // На robota.ua якщо є сайт компанії, на сторінці буде текст "Сайт компанії"
+                if (ctx.session.filters.requireWebsite) {
+                    const hasWebsiteText = text.includes('Сайт компанії') ||
+                        text.includes('сайт компанії') ||
+                        text.includes('Веб-сайт:') ||
+                        text.includes('Website:');
+
+                    if (!hasWebsiteText) {
+                        console.log(`⛔ ${title}: НЕМАЄ САЙТУ (пропущено)`);
+                        await tab.close();
+                        continue;
+                    }
+                }
+
+                // 👇 AI АНАЛІЗУЄ: ФОП, remote (БЕЗ перевірки сайту - вже перевірили вище)
+                // Видаляємо requireWebsite з фільтрів для AI, бо вже перевірили
+                const filtersForAi = { ...ctx.session.filters, requireWebsite: false };
+                const analysis = await analyzeWithGroq(text, filtersForAi);
+
+                console.log(`📊 ${title}: ${analysis.valid ? '✅' : '❌'} ${analysis.reason || ''}`);
 
                 if (analysis.valid) {
                     ctx.session.candidates.push({ title, url: link, summary: analysis.summary });
@@ -325,7 +384,13 @@ bot.on('web_app_data', async (ctx) => {
         }
 
         ctx.session = { filters: data, searchUrl: data.url };
-        const msg = await ctx.reply(`⚙️ Починаю пошук...`);
+
+        // Показуємо що шукаємо
+        let searchMsg = '⚙️ Починаю пошук...';
+        if (data.isSearch && data.originalQuery) {
+            searchMsg = `🔍 Шукаю: "${data.originalQuery.replace('@', '')}"...`;
+        }
+        const msg = await ctx.reply(searchMsg);
         startBatchScraping(ctx, msg.message_id);
     } catch (e) { ctx.reply('Помилка даних WebApp'); }
 });
