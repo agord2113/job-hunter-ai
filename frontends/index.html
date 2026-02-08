@@ -154,6 +154,62 @@
             color: #64ffda;
         }
 
+        /* Секція міста */
+        .city-section {
+            background: rgba(100, 255, 218, 0.05);
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 15px;
+            border: 1px solid rgba(100, 255, 218, 0.2);
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .city-section.visible {
+            display: block;
+        }
+
+        .city-label {
+            font-size: 13px;
+            color: #64ffda;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .city-select {
+            width: 100%;
+            padding: 12px 14px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2364ffda' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+        }
+
+        .city-select:focus {
+            outline: none;
+            border-color: #64ffda;
+        }
+
+        .city-select option {
+            background: #1a1a2e;
+            color: #fff;
+            padding: 10px;
+        }
+
+        .city-select optgroup {
+            background: #1a1a2e;
+            color: #8892b0;
+            font-weight: 600;
+            padding: 8px 0;
+        }
+
         .filters-section {
             background: rgba(255, 255, 255, 0.05);
             border-radius: 16px;
@@ -284,6 +340,45 @@
                     </button>
                 </div>
             </div>
+
+            <!-- Секція міста - показується тільки при @ пошуку -->
+            <div class="city-section" id="citySection">
+                <label class="city-label">📍 Місто:</label>
+                <select id="citySelect" class="city-select">
+                    <option value="ukraine">🇺🇦 Вся Україна</option>
+                    <optgroup label="Обласні центри">
+                        <option value="kyiv">📍 Київ</option>
+                        <option value="kharkiv">📍 Харків</option>
+                        <option value="odesa">📍 Одеса</option>
+                        <option value="dnipro">📍 Дніпро</option>
+                        <option value="lviv">📍 Львів</option>
+                        <option value="zaporizhzhya">📍 Запоріжжя</option>
+                        <option value="vinnytsia">📍 Вінниця</option>
+                        <option value="poltava">📍 Полтава</option>
+                        <option value="chernihiv">📍 Чернігів</option>
+                        <option value="cherkasy">📍 Черкаси</option>
+                        <option value="zhytomyr">📍 Житомир</option>
+                        <option value="sumy">📍 Суми</option>
+                        <option value="rivne">📍 Рівне</option>
+                        <option value="lutsk">📍 Луцьк</option>
+                        <option value="ivano-frankivsk">📍 Івано-Франківськ</option>
+                        <option value="ternopil">📍 Тернопіль</option>
+                        <option value="khmelnytskyi">📍 Хмельницький</option>
+                        <option value="uzhhorod">📍 Ужгород</option>
+                        <option value="chernivtsi">📍 Чернівці</option>
+                        <option value="kropyvnytskyi">📍 Кропивницький</option>
+                        <option value="mykolaiv">📍 Миколаїв</option>
+                        <option value="kherson">📍 Херсон</option>
+                    </optgroup>
+                    <optgroup label="Великі міста">
+                        <option value="kryvyi-rig">📍 Кривий Ріг</option>
+                        <option value="mariupol">📍 Маріуполь</option>
+                        <option value="bila-tserkva">📍 Біла Церква</option>
+                        <option value="kremenchuk">📍 Кременчук</option>
+                        <option value="kamianske">📍 Кам'янське</option>
+                    </optgroup>
+                </select>
+            </div>
         </div>
 
         <div class="filters-section">
@@ -327,25 +422,24 @@
 
         let selectedExperience = 'any';
 
-        // Відновлюємо збережені дані
+        // Відновлюємо збережені дані (вимкнено - кожен раз чистий пошук)
         window.onload = function () {
-            const savedSearch = localStorage.getItem('lastSearch');
-            if (savedSearch) {
-                document.getElementById('searchInput').value = savedSearch;
-                checkInputMode();
-            }
+            // Поле завжди порожнє при відкритті
         }
 
-        // Перевіряємо режим вводу і показуємо/ховаємо секцію досвіду
+        // Перевіряємо режим вводу і показуємо/ховаємо секції досвіду та міста
         function checkInputMode() {
             const value = document.getElementById('searchInput').value.trim();
             const expSection = document.getElementById('experienceSection');
+            const citySection = document.getElementById('citySection');
 
-            // Показуємо досвід тільки якщо це пошук (@ або текст без http)
+            // Показуємо досвід і місто тільки якщо це пошук (@ або текст без http)
             if (value.startsWith('@') || (value.length > 2 && !value.includes('http'))) {
                 expSection.classList.add('visible');
+                citySection.classList.add('visible');
             } else {
                 expSection.classList.remove('visible');
+                citySection.classList.remove('visible');
             }
         }
 
@@ -373,7 +467,7 @@
                 const query = searchValue.startsWith('@') ? searchValue.substring(1).trim() : searchValue.trim();
                 const encodedQuery = encodeURIComponent(query).replace(/%20/g, '-');
 
-                // Формуємо URL з урахуванням досвіду
+                // Формуємо URL з урахуванням досвіду та міста
                 let expPath = '';
                 if (selectedExperience === 'none') {
                     expPath = 'без-досвіду-';
@@ -381,7 +475,8 @@
                     expPath = 'з-досвідом-';
                 }
 
-                url = `https://robota.ua/zapros/${expPath}${encodedQuery}/ukraine`;
+                const city = document.getElementById('citySelect').value;
+                url = `https://robota.ua/zapros/${expPath}${encodedQuery}/${city}`;
                 isSearch = true;
             } else {
                 // Це пряме посилання
@@ -394,14 +489,12 @@
                 return;
             }
 
-            // Зберігаємо для наступного разу
-            localStorage.setItem('lastSearch', searchValue);
-
             const data = {
                 url: url,
                 isSearch: isSearch,
                 originalQuery: searchValue,
                 experience: selectedExperience,
+                city: isSearch ? document.getElementById('citySelect').value : null,
                 requireWebsite: document.getElementById('siteCheck').checked,
                 skipFop: document.getElementById('fopCheck').checked,
                 allowRemote: document.getElementById('remoteCheck').checked
