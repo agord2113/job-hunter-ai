@@ -51,7 +51,7 @@ async function sendAdminError(context, error) {
 const mainMenu = Markup.keyboard([
     [Markup.button.webApp('🚀 ПОШУК', WEB_APP_URL)],
     [Markup.button.text('📂 Збережені вакансії')],
-    [Markup.button.text('ℹ️ Допомога')] // Додали кнопку допомоги
+    [Markup.button.text('ℹ️ Допомога')]
 ]).resize();
 
 // --- AI ANALYZER ---
@@ -151,7 +151,6 @@ async function showCurrentVacancy(ctx) {
                 { parse_mode: 'HTML' }
             );
         } catch (e) {
-            // Ігноруємо помилку якщо повідомлення вже таке саме
             if (!e.message?.includes('message is not modified')) throw e;
         }
         return;
@@ -180,7 +179,6 @@ bot.action('save_next', async (ctx) => {
         const vacancy = ctx.session.candidates[ctx.session.currentIndex];
         const summaryToSave = formatSummary(vacancy.summary);
 
-        // 👇 ЗАХИСТ ВІД ДУБЛІКАТІВ
         const user = await User.findOne({ telegramId: ctx.from.id });
         const alreadyExists = user.savedVacancies.some(v => v.url === vacancy.url);
 
@@ -208,7 +206,7 @@ bot.action('skip_next', async (ctx) => {
     await showCurrentVacancy(ctx);
 });
 
-// --- SCRAPING ENGINE ---
+// --- SCRAPING ENGINE (З ПАГІНАЦІЄЮ!) ---
 async function startBatchScraping(ctx, statusMsgId) {
     let browser = null;
     ctx.session.candidates = [];
@@ -231,7 +229,7 @@ async function startBatchScraping(ctx, statusMsgId) {
 
         try {
             await page.goto(ctx.session.searchUrl, { timeout: 45000, waitUntil: 'domcontentloaded' });
-            await ctx.telegram.editMessageText(ctx.chat.id, statusMsgId, null, `⏳ Чекаю список вакансій...`);
+            await ctx.telegram.editMessageText(ctx.chat.id, statusMsgId, null, `⏳ Збираю вакансії з усіх сторінок...`);
             await new Promise(r => setTimeout(r, 5000));
         } catch (e) {
             await ctx.reply(`❌ Помилка доступу до сайту.`);
@@ -239,54 +237,91 @@ async function startBatchScraping(ctx, statusMsgId) {
             return;
         }
 
-        let links = await page.evaluate(() => {
-            return Array.from(document.querySelectorAll('a'))
-                .map(a => a.href)
-                .filter(href => {
-                    // Шукаємо посилання на вакансії
-                    const hasVacancy = href.includes('vacancy') || href.includes('/jobs/') || href.includes('/job/');
+        // 📄 ЗБИРАЄМО ВАКАНСІЇ З УСІХ СТОРІНОК
+        let allLinks = [];
+        let currentPage = 1;
+        const maxPages = 10; // Максимум сторінок для безпеки
 
-                    // Виключаємо чисті профілі компаній (без вакансії в URL)
-                    const isCompanyOnly = (href.includes('/company') || href.includes('/companies/')) && !href.includes('vacancy');
+        while (currentPage <= maxPages) {
+            // Збираємо посилання з поточної сторінки
+            const pageLinks = await page.evaluate(() => {
+                return Array.from(document.querySelectorAll('a'))
+                    .map(a => a.href)
+                    .filter(href => {
+                        const hasVacancy = href.includes('vacancy') || href.includes('/jobs/') || href.includes('/job/');
+                        const isCompanyOnly = (href.includes('/company') || href.includes('/companies/')) && !href.includes('vacancy');
+                        return hasVacancy && !isCompanyOnly;
+                    });
+            });
 
-                    return hasVacancy && !isCompanyOnly;
-                })
-                .slice(0, 15); // Збільшив ліміт
-        });
+            // Додаємо унікальні посилання
+            const newLinks = pageLinks.filter(link => !allLinks.includes(link));
+            allLinks = [...allLinks, ...newLinks];
+
+            await ctx.telegram.editMessageText(ctx.chat.id, statusMsgId, null,
+                `📄 Сторінка ${currentPage}: знайдено ${allLinks.length} вакансій...`);
+
+            // Шукаємо кнопку "Наступна сторінка"
+            const hasNextPage = await page.evaluate(() => {
+                const nextBtn = document.querySelector('a[data-id="next"]') ||
+                    document.querySelector('.pagination-next') ||
+                    document.querySelector('a[rel="next"]') ||
+                    document.querySelector('[aria-label="Наступна"]');
+                return nextBtn && !nextBtn.classList.contains('disabled');
+            });
+
+            if (!hasNextPage || newLinks.length === 0) {
+                console.log(`📄 Зупинились на сторінці ${currentPage}, всього: ${allLinks.length}`);
+                break;
+            }
+
+            // Переходимо на наступну сторінку
+            try {
+                await page.evaluate(() => {
+                    const nextBtn = document.querySelector('a[data-id="next"]') ||
+                        document.querySelector('.pagination-next') ||
+                        document.querySelector('a[rel="next"]') ||
+                        document.querySelector('[aria-label="Наступна"]');
+                    if (nextBtn) nextBtn.click();
+                });
+                await new Promise(r => setTimeout(r, 3000));
+                currentPage++;
+            } catch (e) {
+                console.log('Не вдалось перейти на наступну сторінку');
+                break;
+            }
+        }
+
+        let links = allLinks;
 
         if (links.length === 0) {
             const screenshotPath = 'debug_error.png';
             await page.screenshot({ path: screenshotPath });
             await ctx.replyWithPhoto({ source: screenshotPath }, { caption: '❌ Вакансій не знайдено (див. фото). Можливо капча.' });
-            // Надсилаємо алерт адміну
             sendAdminError('Zero Vacancies Found', 'Bot got 0 links. Check screenshot.');
             await browser.close();
             return;
         }
 
-        await ctx.telegram.editMessageText(ctx.chat.id, statusMsgId, null, `🔎 Знайдено ${links.length}. Аналізую...`);
+        await ctx.telegram.editMessageText(ctx.chat.id, statusMsgId, null, `🔎 Всього ${links.length} вакансій. Аналізую...`);
 
         for (let i = 0; i < links.length; i++) {
             const link = links[i];
-            if (i % 2 === 0) await ctx.telegram.editMessageText(ctx.chat.id, statusMsgId, null, `⚙️ Опрацьовано ${i} з ${links.length}...`);
+            if (i % 3 === 0) await ctx.telegram.editMessageText(ctx.chat.id, statusMsgId, null, `⚙️ Опрацьовано ${i} з ${links.length}...`);
 
             await new Promise(r => setTimeout(r, 2000));
             const tab = await context.newPage();
             try {
                 await tab.goto(link, { waitUntil: 'domcontentloaded', timeout: 20000 });
-                await new Promise(r => setTimeout(r, 1500)); // Трохи більше часу для SPA
+                await new Promise(r => setTimeout(r, 1500));
 
-                // 👇 ВИПРАВЛЕННЯ ЗАГОЛОВКІВ
                 const title = await tab.evaluate(() => {
                     const h1 = document.querySelector('h1');
                     return h1 ? h1.innerText.trim() : document.title;
                 });
 
-                // Отримуємо весь текст сторінки
                 const text = await tab.evaluate(() => document.body.innerText);
 
-                // 👇 ПЕРЕВІРКА САЙТУ КОМПАНІЇ (НАДІЙНА - через текст сторінки)
-                // На robota.ua якщо є сайт компанії, на сторінці буде текст "Сайт компанії"
                 if (ctx.session.filters.requireWebsite) {
                     const hasWebsiteText = text.includes('Сайт компанії') ||
                         text.includes('сайт компанії') ||
@@ -300,8 +335,6 @@ async function startBatchScraping(ctx, statusMsgId) {
                     }
                 }
 
-                // 👇 AI АНАЛІЗУЄ: ФОП, remote (БЕЗ перевірки сайту - вже перевірили вище)
-                // Видаляємо requireWebsite з фільтрів для AI, бо вже перевірили
                 const filtersForAi = { ...ctx.session.filters, requireWebsite: false };
                 const analysis = await analyzeWithGroq(text, filtersForAi);
 
@@ -378,14 +411,12 @@ bot.on('web_app_data', async (ctx) => {
     try {
         const data = JSON.parse(ctx.message.web_app_data.data);
 
-        // 👇 НОВА ПЕРЕВІРКА: ЧИ ЦЕ ВЗАГАЛІ САЙТ РОБОТИ?
         if (!data.url.includes('work.ua') && !data.url.includes('robota.ua')) {
             return ctx.reply('⛔️ Я вмію працювати тільки з Work.ua та Robota.ua. Будь ласка, встав правильне посилання.');
         }
 
         ctx.session = { filters: data, searchUrl: data.url };
 
-        // Показуємо що шукаємо
         let searchMsg = '⚙️ Починаю пошук...';
         if (data.isSearch && data.originalQuery) {
             searchMsg = `🔍 Шукаю: "${data.originalQuery.replace('@', '')}"...`;
@@ -396,11 +427,8 @@ bot.on('web_app_data', async (ctx) => {
 });
 
 bot.launch().then(() => {
-    console.log('🚀 БОТ ЗАПУЩЕНО (MVP VERSION)');
-    // Можна відправити собі тест, що бот встав
-    // bot.telegram.sendMessage(ADMIN_ID, '🚀 Бот успішно перезапущено!');
+    console.log('🚀 БОТ ЗАПУЩЕНО (З ПАГІНАЦІЄЮ!)');
 });
 
-// Обробка зупинки (Ctrl+C)
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
